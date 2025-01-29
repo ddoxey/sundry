@@ -1,0 +1,12 @@
+{
+    "records": [
+        {
+            "binary": ["0xAB", "0xCD", "0x12", "0x34", "0xEF", "0x56", "0x01", "0x02", "0x03", "0x04"],
+            "text": "Temperature: 25°C, Pressure: 1013 hPa"
+        },
+        {
+            "binary": ["0xAB", "0xCD", "0x56", "0x78", "0xEF", "0x56", "0x11", "0x22", "0x33", "0x44"],
+            "text": "Temperature: 30°C, Pressure: 1020 hPa"
+        }
+    ]
+}
