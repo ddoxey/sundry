@@ -1,57 +1,51 @@
 #!/usr/bin/env python3
 """
-TCP Traffic Recorder
+TCP Traffic Sniffer (Passive)
 
-This script listens for incoming TCP connections on a specified port, captures 
-the raw message payloads (excluding metadata like timestamps and headers), and 
-writes them to a file for later replay.
+This script captures TCP packets sent between a client and a server on a given 
+port without interfering with their communication. It extracts the payloads 
+and saves them to a file.
 
 Usage:
-    python record_traffic.py <port> <output_file>
+    sudo python tcp_record.py <port> <output_file>
 
 Example:
-    python record_traffic.py 5000 captured_data.bin
+    sudo python tcp_record.py 5556 recorded_data.bin
 
-Arguments:
-    port        The TCP port to listen on.
-    output_file The file where the recorded traffic will be saved.
-
-How It Works:
-    - Listens for TCP connections on the specified port.
-    - Accepts a single client connection.
-    - Reads incoming data and writes only the payload to the output file.
-    - Stops recording when the sender closes the connection.
+Requires:
+    - Python's `scapy` module (`pip install scapy`).
+    - Root privileges to sniff packets.
 """
 
-import socket
-import argparse
+from scapy.all import sniff, TCP, Raw
+import sys
 
-def record_traffic(listen_port, output_file):
-    """Capture messages sent to listen_port and save the payloads."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("127.0.0.1", listen_port))
-    server_socket.listen(1)
-    
-    print(f"Listening for messages on port {listen_port}...")
+def packet_callback(packet, output_file):
+    """Callback function to process each captured packet."""
+    if packet.haslayer(Raw):  # Check if the packet has a payload
+        data = packet[Raw].load
+        with open(output_file, "ab") as f:
+            f.write(data)  # Append payload to file
 
-    conn, addr = server_socket.accept()
-    print(f"Connection received from {addr}")
+def record_traffic(port, output_file):
+    """Capture TCP traffic on the specified port."""
+    print(f"Sniffing TCP traffic on port {port}... (Press Ctrl+C to stop)")
 
-    with open(output_file, "wb") as f:
-        while True:
-            data = conn.recv(4096)
-            if not data:
-                break  # Stop if the connection is closed
-            f.write(data)  # Save only the raw payload
-
-    print("Recording complete. Data saved.")
-    conn.close()
-    server_socket.close()
+    try:
+        sniff(
+            filter=f"tcp port {port}",
+            prn=lambda pkt: packet_callback(pkt, output_file),
+            store=False
+        )
+    except KeyboardInterrupt:
+        print("\nRecording stopped.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TCP Traffic Recorder")
-    parser.add_argument("port", type=int, help="Port number to listen on")
-    parser.add_argument("output", type=str, help="File to save captured traffic")
-    
-    args = parser.parse_args()
-    record_traffic(args.port, args.output)
+    if len(sys.argv) != 3:
+        print("Usage: sudo python tcp_record.py <port> <output_file>")
+        sys.exit(1)
+
+    port = sys.argv[1]
+    output_file = sys.argv[2]
+
+    record_traffic(port, output_file)
