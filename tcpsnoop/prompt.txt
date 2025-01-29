@@ -1,0 +1,36 @@
+Generate two Python scripts: `record_traffic.py` and `replay_traffic.py`.
+
+### 1. `record_traffic.py`
+This script listens for incoming TCP connections on a specified port, captures the raw message payloads, and writes them to a file for later replay.
+
+#### **Requirements:**
+- Accepts two command-line arguments:
+  - `port` (integer): The TCP port to listen on.
+  - `output_file` (string): The file where the recorded traffic will be saved.
+- Uses Python’s `socket` module to:
+  - Bind to `127.0.0.1:<port>`, listen for a connection, and accept data.
+  - Save **only** the message payloads to the file (excluding TCP metadata).
+  - Stops recording when the sender closes the connection.
+- Include a documentation header that explains the script’s purpose, usage, and how it works.
+
+---
+
+### 2. `replay_traffic.py`
+This script reads a previously recorded TCP message payload and sends it as a new message to a target host and port.
+
+#### **Requirements:**
+- Accepts three command-line arguments:
+  - `target_host` (string): The IP address of the target application.
+  - `target_port` (integer): The TCP port to send the replayed message.
+  - `input_file` (string): The file containing the recorded message payload.
+- Uses Python’s `socket` module to:
+  - Establish a **new** TCP connection to `target_host:target_port`.
+  - Read the payload from `input_file` and send it as a fresh message.
+  - Close the connection after all data is sent.
+- Include a documentation header that explains the script’s purpose, usage, and how it works.
+
+Ensure both scripts:
+- Are written in **Python 3**.
+- Include a **shebang** (`#!/usr/bin/env python3`).
+- Use **argparse** for command-line argument handling.
+- Are well-structured and follow Python best practices.
