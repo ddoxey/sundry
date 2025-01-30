@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-constexpr int PORT = 5556;
+constexpr int PORT = 5557; // +1 where the proxy is listening
 constexpr int BUFFER_SIZE = 1024;
 
 int main() {
