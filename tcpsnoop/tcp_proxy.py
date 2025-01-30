@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-TCP Proxy with Recording & Playback
+TCP Proxy with Recording & Playback (Multithreaded)
 
 - Listens on port 5557 for the client application.
 - Connects to the actual server on port 5556.
-- Listens on port 6616 for control commands:
-    - 'start-recording' → Record TCP messages from the server to the client.
-    - 'stop-recording'  → Stop recording.
-    - 'playback'        → Replay recorded messages to the client.
+- Runs a separate thread for control commands on port 6616.
+- Commands:
+    - 'start-recording' → Records server-to-client messages.
+    - 'stop-recording' → Stops recording and saves data.
+    - 'playback' → Replays recorded messages to the client.
 
 Usage:
     python tcp_proxy.py
@@ -25,6 +26,8 @@ RECORD_FILE = "recorded_data.bin"
 
 recording = False
 recorded_data = []
+lock = threading.Lock()  # Ensures thread safety for shared variables
+
 
 def forward_data(src_socket, dest_socket, record=False):
     """Transfers data from src_socket to dest_socket, optionally recording it."""
@@ -36,12 +39,14 @@ def forward_data(src_socket, dest_socket, record=False):
         dest_socket.sendall(data)
 
         if record:
-            recorded_data.append(data)
+            with lock:  # Prevent race conditions
+                recorded_data.append(data)
 
     except (socket.error, ConnectionResetError):
         return False  # Connection error
 
     return True
+
 
 def handle_client(client_socket, server_socket):
     """Handles bidirectional communication between client and server."""
@@ -62,48 +67,62 @@ def handle_client(client_socket, server_socket):
                         return  # Server disconnected
 
     except (socket.error, ConnectionResetError):
-        pass  # Handle disconnections
+        pass  # Handle client/server disconnection
 
     client_socket.close()
     server_socket.close()
 
-def control_handler(control_socket, client_socket):
-    """Handles control commands from the control client on port 6616."""
+
+def control_handler():
+    """Runs in a separate thread to listen for control commands on port 6616."""
     global recording, recorded_data
 
-    try:
-        while True:
-            command = control_socket.recv(1024).decode().strip().lower()
+    control_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    control_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    control_socket.bind(("0.0.0.0", CONTROL_PORT))
+    control_socket.listen(1)
+    print(f"Control interface listening on port {CONTROL_PORT}")
+
+    while True:
+        conn, _ = control_socket.accept()
+
+        try:
+            command = conn.recv(1024).decode().strip().lower()
             if not command:
-                break  # Control client disconnected
+                continue  # Ignore empty input
 
             if command == "start-recording":
-                recording = True
-                recorded_data = []
-                control_socket.sendall(b"Recording started.\n")
+                with lock:
+                    recording = True
+                    recorded_data = []
+                conn.sendall(b"Recording started.\n")
 
             elif command == "stop-recording":
-                recording = False
+                with lock:
+                    recording = False
                 try:
                     with open(RECORD_FILE, "wb") as f:
-                        for data in recorded_data:
-                            f.write(data)
-                    control_socket.sendall(b"Recording stopped and saved.\n")  # Ensure response is sent
+                        with lock:
+                            for data in recorded_data:
+                                f.write(data)
+                    conn.sendall(b"Recording stopped and saved.\n")
                 except Exception as e:
-                    control_socket.sendall(f"Error saving file: {e}\n".encode())
+                    conn.sendall(f"Error saving file: {e}\n".encode())
 
             elif command == "playback":
-                for data in recorded_data:
-                    client_socket.sendall(data)
-                control_socket.sendall(b"Playback complete.\n")
+                with lock:
+                    for data in recorded_data:
+                        conn.sendall(data)
+                conn.sendall(b"Playback complete.\n")
 
             else:
-                control_socket.sendall(b"Unknown command.\n")
+                conn.sendall(b"Unknown command.\n")
 
-    except (socket.error, ConnectionResetError):
-        pass  # Handle disconnection
+        except (socket.error, ConnectionResetError):
+            pass  # Handle disconnection
 
-    control_socket.close()
+        conn.close()
+
 
 def start_proxy():
     """Starts the TCP proxy between client and server."""
@@ -113,26 +132,19 @@ def start_proxy():
     proxy_socket.listen(5)
     print(f"TCP Proxy listening on port {PROXY_PORT}")
 
-    control_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    control_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    control_socket.bind(("0.0.0.0", CONTROL_PORT))
-    control_socket.listen(1)
-    print(f"Control interface listening on port {CONTROL_PORT}")
+    # Start control listener in a separate thread
+    threading.Thread(target=control_handler, daemon=True).start()
 
     while True:
-        # Accept connection from client
         client_socket, _ = proxy_socket.accept()
         
         # Connect to the actual server
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.connect((SERVER_HOST, SERVER_PORT))
 
-        # Start bidirectional traffic handling
+        # Start bidirectional traffic handling in a separate thread
         threading.Thread(target=handle_client, args=(client_socket, server_socket), daemon=True).start()
 
-        # Accept control commands
-        control_client, _ = control_socket.accept()
-        threading.Thread(target=control_handler, args=(control_client, client_socket), daemon=True).start()
 
 if __name__ == "__main__":
     start_proxy()
